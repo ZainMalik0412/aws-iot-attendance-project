@@ -149,12 +149,45 @@ jobs:
             })
 
   # ============================================
-  # BUILD JOB - Builds and pushes Docker image
+  # TERRAFORM APPLY - Creates infrastructure (runs first)
+  # ============================================
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve
+
+  # ============================================
+  # BUILD JOB - Builds and pushes Docker image (after infra exists)
   # ============================================
   build:
     name: Build and Push
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, terraform-apply]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       image: ${{ steps.build-image.outputs.image }}
@@ -205,44 +238,12 @@ jobs:
         continue-on-error: true
 
   # ============================================
-  # TERRAFORM APPLY - Applies infrastructure changes
-  # ============================================
-  terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.7"
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve
-
-  # ============================================
   # DEPLOY JOB - Deploys to ECS
   # ============================================
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
-    needs: [build, terraform-apply]
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
