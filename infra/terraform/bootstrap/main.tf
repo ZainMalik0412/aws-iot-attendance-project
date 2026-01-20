@@ -260,7 +260,10 @@ resource "aws_iam_role_policy" "github_actions_terraform_infra" {
           "ec2:RevokeSecurityGroupIngress",
           "ec2:RevokeSecurityGroupEgress",
           "ec2:CreateTags",
-          "ec2:DeleteTags"
+          "ec2:DeleteTags",
+          "ec2:CreateNetworkInterface",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DetachNetworkInterface"
         ]
         Resource = "*"
       },
