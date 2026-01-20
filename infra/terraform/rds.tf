@@ -57,8 +57,12 @@ resource "aws_db_instance" "main" {
 
   multi_az               = false
   publicly_accessible    = false
-  skip_final_snapshot    = true
+  skip_final_snapshot    = false
+  final_snapshot_identifier = "${var.app_name}-db-final-snapshot"
   deletion_protection    = false
+
+  # Restore from snapshot if one exists
+  snapshot_identifier = var.db_snapshot_identifier
 
   backup_retention_period = 7
   backup_window          = "03:00-04:00"

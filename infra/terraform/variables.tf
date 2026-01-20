@@ -88,3 +88,9 @@ variable "github_repo" {
   type        = string
   default     = "ecsv1"
 }
+
+variable "db_snapshot_identifier" {
+  description = "RDS snapshot identifier to restore from (leave null for fresh database)"
+  type        = string
+  default     = null
+}

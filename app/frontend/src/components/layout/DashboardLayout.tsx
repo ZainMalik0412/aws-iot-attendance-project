@@ -38,7 +38,6 @@ const navItems: NavItem[] = [
   { label: 'My Stats', path: '/my-stats', icon: <BarChart3 className="h-5 w-5" />, roles: ['student'] },
   { label: 'Users', path: '/users', icon: <Users className="h-5 w-5" />, roles: ['admin'] },
   { label: 'Register Face', path: '/face-registration', icon: <Camera className="h-5 w-5" />, roles: ['student'] },
-  { label: 'Mark Attendance', path: '/mark-attendance', icon: <ScanFace className="h-5 w-5" />, roles: ['student'] },
 ]
 
 export default function DashboardLayout() {
