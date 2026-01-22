@@ -52,12 +52,21 @@ interface LiveAttendanceStudent {
   has_face_registered: boolean
 }
 
+interface FaceBox {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
 interface RecognizedStudent {
   student_id: number
   student_name: string
+  username: string
   confidence: number
   status: 'present' | 'late'
   already_marked: boolean
+  face_box: FaceBox | null
 }
 
 const statusIcons = {
@@ -78,10 +87,66 @@ export default function LiveSessionPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const webcamRef = useRef<Webcam>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   
   const [isRecognizing, setIsRecognizing] = useState(false)
   const [lastRecognized, setLastRecognized] = useState<RecognizedStudent[]>([])
   const [frameCount, setFrameCount] = useState(0)
+
+  // Draw face bounding boxes on canvas overlay
+  const drawFaceBoxes = useCallback((students: RecognizedStudent[]) => {
+    const canvas = canvasRef.current
+    const video = webcamRef.current?.video
+    if (!canvas || !video) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Match canvas size to video display size
+    const videoRect = video.getBoundingClientRect()
+    canvas.width = videoRect.width
+    canvas.height = videoRect.height
+
+    // Clear previous drawings
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // Calculate scale factors (video capture size vs display size)
+    const scaleX = videoRect.width / 640
+    const scaleY = videoRect.height / 480
+
+    students.forEach((student) => {
+      if (!student.face_box) return
+
+      const { top, right, bottom, left } = student.face_box
+      
+      // Scale coordinates to match displayed video size
+      const x = left * scaleX
+      const y = top * scaleY
+      const width = (right - left) * scaleX
+      const height = (bottom - top) * scaleY
+
+      // Draw green rectangle
+      ctx.strokeStyle = '#22c55e'
+      ctx.lineWidth = 3
+      ctx.strokeRect(x, y, width, height)
+
+      // Draw label background
+      const label = `${student.student_name} (@${student.username})`
+      const confidence = `${Math.round(student.confidence * 100)}%`
+      ctx.font = 'bold 14px Inter, system-ui, sans-serif'
+      const labelWidth = Math.max(ctx.measureText(label).width, ctx.measureText(confidence).width) + 16
+      const labelHeight = 44
+
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.9)'
+      ctx.fillRect(x, y - labelHeight, labelWidth, labelHeight)
+
+      // Draw text
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(label, x + 8, y - 26)
+      ctx.font = '12px Inter, system-ui, sans-serif'
+      ctx.fillText(confidence, x + 8, y - 8)
+    })
+  }, [])
   
   const sessionIdNum = parseInt(sessionId || '0')
 
@@ -107,6 +172,8 @@ export default function LiveSessionPage() {
     onSuccess: (data) => {
       if (data.recognized_students && data.recognized_students.length > 0) {
         setLastRecognized(data.recognized_students)
+        // Draw bounding boxes around recognized faces
+        drawFaceBoxes(data.recognized_students)
         const newlyMarked = data.recognized_students.filter((s: RecognizedStudent) => !s.already_marked)
         if (newlyMarked.length > 0) {
           toast({
@@ -116,6 +183,13 @@ export default function LiveSessionPage() {
         }
         queryClient.invalidateQueries({ queryKey: ['live-attendance', sessionIdNum] })
         queryClient.invalidateQueries({ queryKey: ['live-session-state', sessionIdNum] })
+      } else {
+        // Clear boxes if no faces recognized
+        const canvas = canvasRef.current
+        if (canvas) {
+          const ctx = canvas.getContext('2d')
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+        }
       }
       setFrameCount(prev => prev + 1)
     },
@@ -157,13 +231,24 @@ export default function LiveSessionPage() {
     }
   }, [recognizeMutation])
 
-  // Auto-capture every 1.5 seconds when active and recognizing
+  // Auto-capture every 750ms (2x faster) when active and recognizing
   useEffect(() => {
     if (!isRecognizing || sessionState?.status !== 'active') return
 
-    const interval = setInterval(captureAndRecognize, 1500)
+    const interval = setInterval(captureAndRecognize, 750)
     return () => clearInterval(interval)
   }, [isRecognizing, sessionState?.status, captureAndRecognize])
+
+  // Clear canvas when recognition stops
+  useEffect(() => {
+    if (!isRecognizing) {
+      const canvas = canvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+    }
+  }, [isRecognizing])
 
   if (stateLoading) {
     return (
@@ -264,6 +349,11 @@ export default function LiveSessionPage() {
                 screenshotFormat="image/jpeg"
                 videoConstraints={{ facingMode: 'user', width: 640, height: 480 }}
                 className="h-full w-full object-cover"
+              />
+              {/* Canvas overlay for drawing face bounding boxes */}
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 h-full w-full pointer-events-none"
               />
               {isRecognizing && sessionState.status === 'active' && (
                 <div className="absolute top-2 right-2 flex items-center gap-2 rounded-full bg-red-500 px-3 py-1 text-xs text-white">

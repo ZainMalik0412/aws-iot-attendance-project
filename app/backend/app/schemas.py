@@ -236,12 +236,22 @@ class LiveRecognitionRequest(BaseModel):
     image_base64: str
 
 
+class FaceBox(BaseModel):
+    """Bounding box coordinates for a detected face."""
+    top: int
+    right: int
+    bottom: int
+    left: int
+
+
 class RecognizedStudent(BaseModel):
     student_id: int
     student_name: str
+    username: str
     confidence: float
     status: AttendanceStatus
     already_marked: bool
+    face_box: Optional[FaceBox] = None
 
 
 class LiveRecognitionResponse(BaseModel):

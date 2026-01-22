@@ -9,7 +9,7 @@ from app.deps import CurrentUser, DBSession, RequireLecturer
 from app.models import Attendance, AttendanceStatus, Module, Role, Session, SessionStatus
 from app.schemas import (
     SessionCreate, SessionDetail, SessionOut, SessionUpdate, ModuleOut,
-    LiveRecognitionRequest, LiveRecognitionResponse, RecognizedStudent,
+    LiveRecognitionRequest, LiveRecognitionResponse, RecognizedStudent, FaceBox,
     LiveSessionState, LiveAttendanceList, LiveAttendanceStudent,
 )
 from app.services.face_recognition import (
@@ -345,10 +345,12 @@ def recognize_frame(
     # Get all enrolled students with their face encodings
     enrolled_students = session.module.enrolled_students
     student_encoding_data = []
+    student_lookup = {}  # Map student_id to (full_name, username)
     for student in enrolled_students:
         encodings = [bytes_to_encoding(fe.encoding) for fe in student.face_encodings]
         if encodings:
             student_encoding_data.append((student.id, student.full_name, encodings))
+            student_lookup[student.id] = (student.full_name, student.username)
     
     if not student_encoding_data:
         return LiveRecognitionResponse(
@@ -362,10 +364,12 @@ def recognize_frame(
     now = datetime.utcnow()
     late_threshold = session.actual_start + timedelta(minutes=session.late_threshold_minutes)
     
-    for face_encoding in face_encodings:
+    # face_encodings now contains (encoding, face_location) tuples
+    for face_encoding, face_location in face_encodings:
         match = match_face_to_students(face_encoding, student_encoding_data)
         if match:
             student_id, student_name, confidence = match
+            username = student_lookup.get(student_id, (student_name, "unknown"))[1]
             
             # Get or create attendance record
             attendance = db.query(Attendance).filter(
@@ -395,12 +399,18 @@ def recognize_frame(
                 )
                 db.add(attendance)
             
+            # Create face bounding box from location (top, right, bottom, left)
+            top, right, bottom, left = face_location
+            face_box = FaceBox(top=top, right=right, bottom=bottom, left=left)
+            
             recognized.append(RecognizedStudent(
                 student_id=student_id,
                 student_name=student_name,
+                username=username,
                 confidence=confidence,
                 status=attendance.status,
                 already_marked=already_marked,
+                face_box=face_box,
             ))
     
     db.commit()

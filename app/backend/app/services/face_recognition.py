@@ -241,11 +241,12 @@ def extract_and_encode_face(image_base64: str) -> Tuple[Optional[np.ndarray], st
     return encodings[0], "Success"
 
 
-def extract_all_faces(image_base64: str) -> Tuple[List[np.ndarray], str]:
+def extract_all_faces(image_base64: str) -> Tuple[List[Tuple[np.ndarray, Tuple[int, int, int, int]]], str]:
     """
     Extract and encode ALL faces from a base64 image (for live recognition).
     
-    Returns (list of encodings, message).
+    Returns (list of (encoding, face_location) tuples, message).
+    Each face_location is (top, right, bottom, left) for drawing bounding boxes.
     Used by lecturers during live sessions to detect multiple students.
     Uses OpenCV Haar cascade for accurate face-only detection.
     """
@@ -265,8 +266,10 @@ def extract_all_faces(image_base64: str) -> Tuple[List[np.ndarray], str]:
     if len(face_locations) == 0:
         return [], "No faces detected"
     
+    # Return encodings paired with their face locations for bounding box display
     encodings = encode_faces(image, face_locations)
-    return encodings, f"Detected {len(encodings)} face(s)"
+    results = list(zip(encodings, face_locations))
+    return results, f"Detected {len(results)} face(s)"
 
 
 def match_face_to_students(
