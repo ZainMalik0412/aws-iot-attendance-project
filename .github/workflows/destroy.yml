@@ -55,17 +55,16 @@ jobs:
         with:
           terraform_version: "1.5.7"
 
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
-
       - name: Force unlock Terraform state if locked
-        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          # Clean up any stale locks from previous failed runs
+          # Clean up any stale locks from previous failed runs BEFORE terraform init
           aws dynamodb delete-item --table-name attendancems-terraform-locks \
             --key '{"LockID":{"S":"attendancems-terraform-state/prod/terraform.tfstate"}}' 2>/dev/null || true
           echo "✅ Cleared any stale state locks"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
 
       - name: Delete existing RDS final snapshot if exists
         run: |
@@ -84,11 +83,11 @@ jobs:
 
       - name: Terraform Plan Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -destroy -out=tfplan
+        run: terraform plan -destroy -out=tfplan -lock-timeout=2m
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve -lock-timeout=2m tfplan
 
       - name: Clean up Terraform state for fresh rebuild
         if: success()
