@@ -37,19 +37,19 @@ variable "container_port" {
 variable "container_cpu" {
   description = "CPU units for the container"
   type        = number
-  default     = 512
+  default     = 256
 }
 
 variable "container_memory" {
   description = "Memory for the container in MB"
   type        = number
-  default     = 1024
+  default     = 512
 }
 
 variable "desired_count" {
   description = "Desired number of tasks"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "db_instance_class" {
