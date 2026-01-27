@@ -1,9 +1,16 @@
-import { useQuery } from '@tanstack/react-query'
-import { getUsers } from '@/lib/api'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { getUsers, createUser } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Users, CheckCircle, XCircle, Camera } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { useToast } from '@/components/ui/use-toast'
+import { Users, CheckCircle, XCircle, Camera, RefreshCw, UserPlus } from 'lucide-react'
 
 interface User {
   id: number
@@ -23,10 +30,62 @@ const roleColors: Record<string, 'default' | 'secondary' | 'destructive'> = {
 }
 
 export default function UsersPage() {
-  const { data: users, isLoading } = useQuery<User[]>({
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [newUser, setNewUser] = useState({
+    username: '',
+    password: '',
+    full_name: '',
+    email: '',
+    role: 'student' as 'student' | 'lecturer' | 'admin',
+  })
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: users, isLoading, refetch, isFetching } = useQuery<User[]>({
     queryKey: ['users'],
     queryFn: () => getUsers(),
+    refetchOnWindowFocus: true,
+    staleTime: 10000,
   })
+
+  const handleCreateUser = async () => {
+    if (!newUser.username || !newUser.password || !newUser.full_name) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing fields',
+        description: 'Please fill in all required fields.',
+      })
+      return
+    }
+
+    setIsCreating(true)
+    try {
+      await createUser({
+        username: newUser.username,
+        password: newUser.password,
+        full_name: newUser.full_name,
+        email: newUser.email || undefined,
+        role: newUser.role,
+      })
+      toast({
+        title: 'User created',
+        description: `Successfully created user ${newUser.username}`,
+      })
+      setNewUser({ username: '', password: '', full_name: '', email: '', role: 'student' })
+      setIsDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create user'
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: message,
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   const getInitials = (name: string) => {
     return name
@@ -39,11 +98,106 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Users</h1>
-        <p className="text-muted-foreground">
-          Manage system users
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Users</h1>
+          <p className="text-muted-foreground">
+            Manage system users
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add User
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New User</DialogTitle>
+                <DialogDescription>
+                  Add a new user to the system. All fields marked with * are required.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="username">Username *</Label>
+                  <Input
+                    id="username"
+                    placeholder="Enter username"
+                    value={newUser.username}
+                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="full_name">Full Name *</Label>
+                  <Input
+                    id="full_name"
+                    placeholder="Enter full name"
+                    value={newUser.full_name}
+                    onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter email (optional)"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="role">Role *</Label>
+                  <Select
+                    value={newUser.role}
+                    onValueChange={(value: 'student' | 'lecturer' | 'admin') => 
+                      setNewUser({ ...newUser, role: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="student">Student</SelectItem>
+                      <SelectItem value="lecturer">Lecturer</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateUser} disabled={isCreating}>
+                  {isCreating ? 'Creating...' : 'Create User'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {isLoading ? (
