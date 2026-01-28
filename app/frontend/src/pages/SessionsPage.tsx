@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { Calendar, Play, Pause, Square, Clock, Video, Plus, Trash2 } from 'lucide-react'
+import { Calendar, Play, Pause, Square, Clock, Video, Plus, Trash2, History, CalendarClock, ChevronDown, ChevronUp } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface Session {
@@ -46,6 +46,7 @@ export default function SessionsPage() {
   const navigate = useNavigate()
   
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [showEnded, setShowEnded] = useState(false)
   const [formData, setFormData] = useState({
     module_id: '',
     title: '',
@@ -192,106 +193,192 @@ export default function SessionsPage() {
           ))}
         </div>
       ) : sessions && sessions.length > 0 ? (
-        <div className="space-y-4">
-          {sessions.map((session) => (
-            <Card key={session.id}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{session.title}</CardTitle>
-                    <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                      <Clock className="h-4 w-4" />
-                      {format(new Date(session.scheduled_start), 'PPp')}
-                    </p>
-                  </div>
-                  <Badge variant={statusColors[session.status]}>
-                    {session.status}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Late threshold: {session.late_threshold_minutes} min
-                  </p>
-                  {canManageSessions && (
-                    <div className="flex gap-2">
-                      {session.status === 'scheduled' && (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => startMutation.mutate(session.id)}
-                            disabled={startMutation.isPending}
-                          >
-                            <Play className="mr-1 h-4 w-4" />
-                            Start
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => deleteMutation.mutate(session.id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                      {session.status === 'active' && (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => navigate(`/live-session/${session.id}`)}
-                          >
-                            <Video className="mr-1 h-4 w-4" />
-                            Live
-                          </Button>
+        <div className="space-y-8">
+          {/* Upcoming & Active Sessions */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold">Upcoming & Active Sessions</h2>
+              <Badge variant="secondary">
+                {sessions.filter(s => s.status !== 'ended').length}
+              </Badge>
+            </div>
+            {sessions.filter(s => s.status !== 'ended').length > 0 ? (
+              <div className="space-y-4">
+                {sessions.filter(s => s.status !== 'ended').map((session) => (
+                  <Card key={session.id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-lg">{session.title}</CardTitle>
+                          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                            <Clock className="h-4 w-4" />
+                            {format(new Date(session.scheduled_start), 'PPp')}
+                          </p>
+                        </div>
+                        <Badge variant={statusColors[session.status]}>
+                          {session.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          Late threshold: {session.late_threshold_minutes} min
+                        </p>
+                        {canManageSessions && (
+                          <div className="flex gap-2">
+                            {session.status === 'scheduled' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => startMutation.mutate(session.id)}
+                                  disabled={startMutation.isPending}
+                                >
+                                  <Play className="mr-1 h-4 w-4" />
+                                  Start
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => deleteMutation.mutate(session.id)}
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                            {session.status === 'active' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => navigate(`/live-session/${session.id}`)}
+                                >
+                                  <Video className="mr-1 h-4 w-4" />
+                                  Live
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => pauseMutation.mutate(session.id)}
+                                  disabled={pauseMutation.isPending}
+                                >
+                                  <Pause className="mr-1 h-4 w-4" />
+                                  Pause
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => endMutation.mutate(session.id)}
+                                  disabled={endMutation.isPending}
+                                >
+                                  <Square className="mr-1 h-4 w-4" />
+                                  End
+                                </Button>
+                              </>
+                            )}
+                            {session.status === 'paused' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => resumeMutation.mutate(session.id)}
+                                  disabled={resumeMutation.isPending}
+                                >
+                                  <Play className="mr-1 h-4 w-4" />
+                                  Resume
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => endMutation.mutate(session.id)}
+                                  disabled={endMutation.isPending}
+                                >
+                                  <Square className="mr-1 h-4 w-4" />
+                                  End
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="p-6 text-center">
+                <p className="text-sm text-muted-foreground">No upcoming sessions scheduled.</p>
+              </Card>
+            )}
+          </div>
+
+          {/* Ended Sessions */}
+          <div className="space-y-4">
+            <Button
+              variant="ghost"
+              className="flex items-center gap-2 p-0 h-auto hover:bg-transparent"
+              onClick={() => setShowEnded(!showEnded)}
+            >
+              <History className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold text-muted-foreground">Ended Sessions</h2>
+              <Badge variant="outline">
+                {sessions.filter(s => s.status === 'ended').length}
+              </Badge>
+              {showEnded ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+            {showEnded && sessions.filter(s => s.status === 'ended').length > 0 && (
+              <div className="space-y-4">
+                {sessions.filter(s => s.status === 'ended').map((session) => (
+                  <Card key={session.id} className="opacity-75">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-lg">{session.title}</CardTitle>
+                          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                            <Clock className="h-4 w-4" />
+                            {format(new Date(session.scheduled_start), 'PPp')}
+                          </p>
+                          {session.actual_end && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Ended: {format(new Date(session.actual_end), 'PPp')}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant={statusColors[session.status]}>
+                          {session.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          Late threshold: {session.late_threshold_minutes} min
+                        </p>
+                        {canManageSessions && (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => pauseMutation.mutate(session.id)}
-                            disabled={pauseMutation.isPending}
+                            onClick={() => navigate(`/attendance?session_id=${session.id}`)}
                           >
-                            <Pause className="mr-1 h-4 w-4" />
-                            Pause
+                            View Attendance
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => endMutation.mutate(session.id)}
-                            disabled={endMutation.isPending}
-                          >
-                            <Square className="mr-1 h-4 w-4" />
-                            End
-                          </Button>
-                        </>
-                      )}
-                      {session.status === 'paused' && (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => resumeMutation.mutate(session.id)}
-                            disabled={resumeMutation.isPending}
-                          >
-                            <Play className="mr-1 h-4 w-4" />
-                            Resume
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => endMutation.mutate(session.id)}
-                            disabled={endMutation.isPending}
-                          >
-                            <Square className="mr-1 h-4 w-4" />
-                            End
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {showEnded && sessions.filter(s => s.status === 'ended').length === 0 && (
+              <Card className="p-6 text-center">
+                <p className="text-sm text-muted-foreground">No ended sessions yet.</p>
+              </Card>
+            )}
+          </div>
         </div>
       ) : (
         <Card className="p-8 text-center">

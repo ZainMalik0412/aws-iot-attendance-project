@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getUsers, createUser } from '@/lib/api'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { getUsers, createUser, deleteUser } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { Users, CheckCircle, XCircle, Camera, RefreshCw, UserPlus } from 'lucide-react'
+import { Users, CheckCircle, XCircle, Camera, RefreshCw, UserPlus, Trash2, AlertTriangle } from 'lucide-react'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 
 interface User {
   id: number
@@ -32,6 +33,8 @@ const roleColors: Record<string, 'default' | 'secondary' | 'destructive'> = {
 export default function UsersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [newUser, setNewUser] = useState({
     username: '',
     password: '',
@@ -41,6 +44,38 @@ export default function UsersPage() {
   })
   const queryClient = useQueryClient()
   const { toast } = useToast()
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      toast({
+        title: 'User deleted',
+        description: `User ${userToDelete?.username} and all their data have been deleted.`,
+      })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setDeleteDialogOpen(false)
+      setUserToDelete(null)
+    },
+    onError: (error: unknown) => {
+      const message = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to delete user'
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: message,
+      })
+    },
+  })
+
+  const handleDeleteClick = (user: User) => {
+    setUserToDelete(user)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (userToDelete) {
+      deleteMutation.mutate(userToDelete.id)
+    }
+  }
 
   const { data: users, isLoading, refetch, isFetching } = useQuery<User[]>({
     queryKey: ['users'],
@@ -228,13 +263,23 @@ export default function UsersPage() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium truncate">{user.full_name}</p>
-                      {user.is_active ? (
-                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium truncate">{user.full_name}</p>
+                        {user.is_active ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDeleteClick(user)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">
                       @{user.username}
@@ -270,6 +315,39 @@ export default function UsersPage() {
           </p>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete User
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{userToDelete?.full_name}</strong> (@{userToDelete?.username})?
+              <br /><br />
+              This action cannot be undone. The following data will be permanently deleted:
+              <ul className="list-disc list-inside mt-2 text-left">
+                <li>User account and profile</li>
+                <li>All attendance records</li>
+                <li>All face recognition data</li>
+                <li>Module enrolments</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete User'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
