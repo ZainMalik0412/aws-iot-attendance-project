@@ -66,27 +66,46 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
-      - name: Save latest RDS snapshot identifier for restoration
+      - name: Save latest RDS snapshot and clean up old ones
         run: |
-          # Find the latest snapshot to preserve for data persistence
+          echo "📸 Finding and preserving latest RDS snapshot..."
+          
+          # Get all manual snapshots for our DB, sorted by creation time
+          SNAPSHOTS=$(aws rds describe-db-snapshots \
+            --query 'DBSnapshots[?DBInstanceIdentifier==`attendancems-db` && SnapshotType==`manual`].DBSnapshotIdentifier' \
+            --output text 2>/dev/null || echo "")
+          
           LATEST_SNAPSHOT=$(aws rds describe-db-snapshots \
             --db-instance-identifier attendancems-db \
+            --snapshot-type manual \
             --query 'DBSnapshots | sort_by(@, &SnapshotCreateTime) | [-1].DBSnapshotIdentifier' \
             --output text 2>/dev/null || echo "none")
           
           if [ "$LATEST_SNAPSHOT" != "none" ] && [ "$LATEST_SNAPSHOT" != "None" ] && [ -n "$LATEST_SNAPSHOT" ]; then
-            echo "📸 Latest snapshot found: $LATEST_SNAPSHOT"
-            echo "This snapshot will be PRESERVED for data restoration on next deploy"
-            # Store in SSM Parameter for the rebuild workflow to use
+            echo "📸 Latest snapshot to preserve: $LATEST_SNAPSHOT"
+            
+            # Store in SSM for rebuild
             aws ssm put-parameter \
               --name "/attendancems/latest-db-snapshot" \
               --value "$LATEST_SNAPSHOT" \
               --type String \
               --overwrite || true
-            echo "✅ Snapshot identifier saved to SSM Parameter Store"
+            echo "✅ Snapshot identifier saved to SSM"
+            
+            # Delete ALL OTHER manual snapshots to save storage costs
+            echo "🗑️ Cleaning up old manual snapshots..."
+            for snap in $SNAPSHOTS; do
+              if [ "$snap" != "$LATEST_SNAPSHOT" ]; then
+                echo "  Deleting old snapshot: $snap"
+                aws rds delete-db-snapshot --db-snapshot-identifier "$snap" 2>/dev/null || true
+              fi
+            done
           else
-            echo "No existing snapshots found"
+            echo "No manual snapshots found"
           fi
+          
+          # Also clean up automated snapshots after RDS is deleted (they'll be orphaned)
+          echo "Note: Automated backups will be deleted when RDS instance is destroyed"
 
       - name: Terraform Plan Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -96,11 +115,88 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -lock-timeout=2m tfplan
 
+      - name: Clean up ECR images to stop storage costs
+        if: always()
+        run: |
+          echo "🗑️ Cleaning up ECR images..."
+          
+          # Delete all images from ECR repository
+          IMAGES=$(aws ecr list-images --repository-name attendancems-app \
+            --query 'imageIds[*]' --output json 2>/dev/null || echo "[]")
+          
+          if [ "$IMAGES" != "[]" ] && [ -n "$IMAGES" ]; then
+            echo "  Found images to delete"
+            aws ecr batch-delete-image \
+              --repository-name attendancems-app \
+              --image-ids "$IMAGES" 2>/dev/null || true
+            echo "✅ ECR images deleted"
+          else
+            echo "  No ECR images found or repository doesn't exist"
+          fi
+
+      - name: Clean up CloudWatch Log Groups
+        if: always()
+        run: |
+          echo "🗑️ Cleaning up CloudWatch Log Groups..."
+          
+          # Delete ECS log group
+          aws logs delete-log-group --log-group-name /ecs/attendancems 2>/dev/null || true
+          
+          # Delete any other attendancems log groups
+          LOG_GROUPS=$(aws logs describe-log-groups \
+            --log-group-name-prefix /ecs/attendancems \
+            --query 'logGroups[*].logGroupName' --output text 2>/dev/null || echo "")
+          
+          for lg in $LOG_GROUPS; do
+            echo "  Deleting log group: $lg"
+            aws logs delete-log-group --log-group-name "$lg" 2>/dev/null || true
+          done
+          echo "✅ CloudWatch Log Groups cleaned up"
+
+      - name: Clean up any remaining RDS snapshots
+        if: always()
+        run: |
+          echo "🗑️ Final cleanup of RDS snapshots (keeping only the preserved one)..."
+          
+          PRESERVED=$(aws ssm get-parameter --name "/attendancems/latest-db-snapshot" \
+            --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+          
+          # Get ALL snapshots (both manual and system)
+          ALL_SNAPSHOTS=$(aws rds describe-db-snapshots \
+            --query "DBSnapshots[?contains(DBSnapshotIdentifier, 'attendancems')].DBSnapshotIdentifier" \
+            --output text 2>/dev/null || echo "")
+          
+          for snap in $ALL_SNAPSHOTS; do
+            if [ "$snap" != "$PRESERVED" ]; then
+              echo "  Deleting snapshot: $snap"
+              aws rds delete-db-snapshot --db-snapshot-identifier "$snap" 2>/dev/null || true
+            else
+              echo "  Preserving snapshot: $snap (for data restoration)"
+            fi
+          done
+          echo "✅ RDS snapshot cleanup complete"
+
       - name: Clean up Terraform state for fresh rebuild
         if: success()
         run: |
           # Delete the state file so next apply starts fresh
           aws s3 rm s3://attendancems-terraform-state/prod/terraform.tfstate || true
+          # Clean up old state versions to reduce S3 storage costs
+          aws s3api list-object-versions --bucket attendancems-terraform-state --prefix prod/ \
+            --query 'Versions[?IsLatest==`false`].[Key,VersionId]' --output text 2>/dev/null | \
+            while read key version; do
+              if [ -n "$key" ] && [ -n "$version" ]; then
+                aws s3api delete-object --bucket attendancems-terraform-state --key "$key" --version-id "$version" 2>/dev/null || true
+              fi
+            done
+          # Clean up delete markers
+          aws s3api list-object-versions --bucket attendancems-terraform-state --prefix prod/ \
+            --query 'DeleteMarkers[*].[Key,VersionId]' --output text 2>/dev/null | \
+            while read key version; do
+              if [ -n "$key" ] && [ -n "$version" ]; then
+                aws s3api delete-object --bucket attendancems-terraform-state --key "$key" --version-id "$version" 2>/dev/null || true
+              fi
+            done
           # Clean up any stale DynamoDB entries
           aws dynamodb delete-item --table-name attendancems-terraform-locks \
             --key '{"LockID":{"S":"attendancems-terraform-state/prod/terraform.tfstate"}}' || true

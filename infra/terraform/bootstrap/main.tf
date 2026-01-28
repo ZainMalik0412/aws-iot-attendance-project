@@ -353,6 +353,7 @@ resource "aws_iam_role_policy" "github_actions_terraform_infra" {
         Action = [
           "logs:CreateLogGroup",
           "logs:DeleteLogGroup",
+          "logs:DescribeLogGroups",
           "logs:PutRetentionPolicy",
           "logs:TagResource",
           "logs:UntagResource"
@@ -415,6 +416,8 @@ resource "aws_iam_role_policy" "github_actions_terraform_infra" {
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
+          "ecr:BatchDeleteImage",
+          "ecr:ListImages",
           "ecr:PutImage",
           "ecr:InitiateLayerUpload",
           "ecr:UploadLayerPart",
