@@ -231,11 +231,11 @@ export default function LiveSessionPage() {
     }
   }, [recognizeMutation])
 
-  // Auto-capture every 500ms (3x faster) for detecting moving faces
+  // Auto-capture every 200ms (5 FPS) for real-time detection of walking students
   useEffect(() => {
     if (!isRecognizing || sessionState?.status !== 'active') return
 
-    const interval = setInterval(captureAndRecognize, 500)
+    const interval = setInterval(captureAndRecognize, 200)
     return () => clearInterval(interval)
   }, [isRecognizing, sessionState?.status, captureAndRecognize])
 
