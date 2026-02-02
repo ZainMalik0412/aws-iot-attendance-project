@@ -66,6 +66,69 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
+      - name: Pre-destroy - Delete NAT Gateways and EIPs (speeds up VPC destroy)
+        run: |
+          echo "🚀 Pre-destroying NAT Gateways and EIPs to speed up VPC deletion..."
+          
+          # Find and delete NAT Gateways (these take 5+ minutes if left to terraform)
+          NAT_GWS=$(aws ec2 describe-nat-gateways \
+            --filter "Name=tag:Name,Values=*attendancems*" "Name=state,Values=available,pending" \
+            --query 'NatGateways[*].NatGatewayId' --output text 2>/dev/null || echo "")
+          
+          for nat in $NAT_GWS; do
+            echo "  Deleting NAT Gateway: $nat"
+            aws ec2 delete-nat-gateway --nat-gateway-id "$nat" 2>/dev/null || true
+          done
+          
+          # Wait briefly for NAT Gateways to start deleting
+          if [ -n "$NAT_GWS" ]; then
+            echo "  Waiting 30s for NAT Gateway deletion to start..."
+            sleep 30
+          fi
+          
+          # Find and release Elastic IPs
+          EIPS=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=*attendancems*" \
+            --query 'Addresses[*].AllocationId' --output text 2>/dev/null || echo "")
+          
+          for eip in $EIPS; do
+            echo "  Releasing Elastic IP: $eip"
+            aws ec2 release-address --allocation-id "$eip" 2>/dev/null || true
+          done
+          
+          # Delete ECS services to speed up cluster deletion
+          aws ecs update-service --cluster attendancems-cluster --service attendancems-service \
+            --desired-count 0 2>/dev/null || true
+          aws ecs delete-service --cluster attendancems-cluster --service attendancems-service \
+            --force 2>/dev/null || true
+          
+          # Delete ALB listeners and target groups
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?contains(LoadBalancerName, 'attendancems')].LoadBalancerArn" \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$ALB_ARN" ]; then
+            # Delete listeners first
+            LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
+              --query 'Listeners[*].ListenerArn' --output text 2>/dev/null || echo "")
+            for listener in $LISTENERS; do
+              aws elbv2 delete-listener --listener-arn "$listener" 2>/dev/null || true
+            done
+            
+            # Delete the ALB
+            aws elbv2 delete-load-balancer --load-balancer-arn "$ALB_ARN" 2>/dev/null || true
+          fi
+          
+          # Delete target groups
+          TGS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?contains(TargetGroupName, 'attendancems')].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+          for tg in $TGS; do
+            aws elbv2 delete-target-group --target-group-arn "$tg" 2>/dev/null || true
+          done
+          
+          echo "✅ Pre-destroy cleanup complete"
+
       - name: Save latest RDS snapshot and clean up old ones
         run: |
           echo "📸 Finding and preserving latest RDS snapshot..."
