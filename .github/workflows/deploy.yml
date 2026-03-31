@@ -266,21 +266,36 @@ jobs:
       - name: Check for RDS snapshot to restore from
         id: check-snapshot
         run: |
-          SNAPSHOT_ID=$(aws ssm get-parameter \
-            --name "/attendancems/latest-db-snapshot" \
-            --query 'Parameter.Value' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
-            if aws rds describe-db-snapshots --db-snapshot-identifier "$SNAPSHOT_ID" &>/dev/null; then
-              echo "📸 Found snapshot to restore from: $SNAPSHOT_ID"
-              echo "snapshot_id=$SNAPSHOT_ID" >> $GITHUB_OUTPUT
-              echo "has_snapshot=true" >> $GITHUB_OUTPUT
+          # Only restore from snapshot if the RDS instance does NOT already exist.
+          # Passing snapshot_identifier to an existing instance would force Terraform
+          # to destroy and recreate it (~10-15 min), which is the main cause of slow deploys.
+          RDS_STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier attendancems-db \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$RDS_STATUS" != "MISSING" ] && [ "$RDS_STATUS" != "None" ]; then
+            echo "✅ RDS instance already exists (status: $RDS_STATUS), skipping snapshot restore"
+            echo "has_snapshot=false" >> $GITHUB_OUTPUT
+          else
+            SNAPSHOT_ID=$(aws ssm get-parameter \
+              --name "/attendancems/latest-db-snapshot" \
+              --query 'Parameter.Value' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$SNAPSHOT_ID" ] && [ "$SNAPSHOT_ID" != "None" ]; then
+              if aws rds describe-db-snapshots --db-snapshot-identifier "$SNAPSHOT_ID" &>/dev/null; then
+                echo "📸 RDS missing, restoring from snapshot: $SNAPSHOT_ID"
+                echo "snapshot_id=$SNAPSHOT_ID" >> $GITHUB_OUTPUT
+                echo "has_snapshot=true" >> $GITHUB_OUTPUT
+              else
+                echo "⚠️ Snapshot $SNAPSHOT_ID not found, creating fresh database"
+                echo "has_snapshot=false" >> $GITHUB_OUTPUT
+              fi
             else
+              echo "ℹ️ No snapshot configured, creating fresh database"
               echo "has_snapshot=false" >> $GITHUB_OUTPUT
             fi
-          else
-            echo "has_snapshot=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Terraform Init

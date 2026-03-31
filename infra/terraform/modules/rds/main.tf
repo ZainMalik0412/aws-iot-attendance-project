@@ -111,8 +111,10 @@ resource "aws_db_instance" "main" {
   deletion_protection = false
 
   # Ignore changes to the final snapshot name (timestamp changes every apply)
+  # Ignore snapshot_identifier so that passing a snapshot var on subsequent
+  # applies does not force-replace an already-running database instance
   lifecycle {
-    ignore_changes = [final_snapshot_identifier]
+    ignore_changes = [final_snapshot_identifier, snapshot_identifier]
   }
 
   # Optionally restore from a snapshot (used when rebuilding after destroy)
