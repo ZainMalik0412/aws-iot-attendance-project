@@ -136,12 +136,12 @@ export default function AttendancePage() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
               <div className="space-y-2">
                 <Label>Module</Label>
-                <Select value={moduleFilter} onValueChange={setModuleFilter}>
+                <Select value={moduleFilter || 'all'} onValueChange={(v) => setModuleFilter(v === 'all' ? '' : v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="All modules" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All modules</SelectItem>
+                    <SelectItem value="all">All modules</SelectItem>
                     {modules?.map((m) => (
                       <SelectItem key={m.id} value={m.id.toString()}>
                         {m.code} - {m.name}
@@ -153,12 +153,12 @@ export default function AttendancePage() {
 
               <div className="space-y-2">
                 <Label>Session</Label>
-                <Select value={sessionFilter} onValueChange={setSessionFilter}>
+                <Select value={sessionFilter || 'all'} onValueChange={(v) => setSessionFilter(v === 'all' ? '' : v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="All sessions" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All sessions</SelectItem>
+                    <SelectItem value="all">All sessions</SelectItem>
                     {sessions?.filter(s => !moduleFilter || s.module_id === parseInt(moduleFilter)).map((s) => (
                       <SelectItem key={s.id} value={s.id.toString()}>
                         {s.title}
@@ -170,12 +170,12 @@ export default function AttendancePage() {
 
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="present">Present</SelectItem>
                     <SelectItem value="late">Late</SelectItem>
                     <SelectItem value="absent">Absent</SelectItem>

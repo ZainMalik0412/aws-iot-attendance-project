@@ -19,6 +19,21 @@ from app.services.face_recognition import (
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
+def _auto_end_expired_sessions(db) -> None:
+    # Automatically end sessions whose scheduled_end has passed.
+    # This covers active or paused sessions that were never manually ended.
+    now = datetime.utcnow()
+    expired = db.query(Session).filter(
+        Session.status.in_([SessionStatus.ACTIVE, SessionStatus.PAUSED]),
+        Session.scheduled_end <= now,
+    ).all()
+    for session in expired:
+        session.status = SessionStatus.ENDED
+        session.actual_end = session.scheduled_end
+    if expired:
+        db.commit()
+
+
 @router.get("", response_model=List[SessionOut])
 def list_sessions(
     db: DBSession,
@@ -29,6 +44,7 @@ def list_sessions(
     limit: int = 100,
 ):
     # List sessions. Filtered by user role and optionally by module or status.
+    _auto_end_expired_sessions(db)
     query = db.query(Session)
     if current_user.role == Role.STUDENT:
         # Students see sessions for modules they're enrolled in
@@ -56,6 +72,8 @@ def create_session(payload: SessionCreate, db: DBSession, current_user: RequireL
         raise HTTPException(status_code=403, detail="Not assigned to this module")
     if payload.scheduled_end <= payload.scheduled_start:
         raise HTTPException(status_code=400, detail="End time must be after start time")
+    if payload.scheduled_start < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Cannot schedule a session in the past")
     session = Session(
         module_id=payload.module_id,
         title=payload.title,
@@ -72,6 +90,7 @@ def create_session(payload: SessionCreate, db: DBSession, current_user: RequireL
 @router.get("/{session_id}", response_model=SessionDetail)
 def get_session(session_id: int, db: DBSession, current_user: CurrentUser):
     # Get session details.
+    _auto_end_expired_sessions(db)
     session = db.query(Session).filter(Session.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -221,6 +240,7 @@ def end_session(session_id: int, db: DBSession, current_user: RequireLecturer):
 @router.get("/{session_id}/live-state", response_model=LiveSessionState)
 def get_live_session_state(session_id: int, db: DBSession, current_user: RequireLecturer):
     # Get the current state of a live session for the live attendance UI.
+    _auto_end_expired_sessions(db)
     session = db.query(Session).filter(Session.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

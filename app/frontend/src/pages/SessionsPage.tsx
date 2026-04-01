@@ -153,14 +153,26 @@ export default function SessionsPage() {
   }
 
   const handleCreate = () => {
+    const start = new Date(formData.scheduled_start)
+    const end = new Date(formData.scheduled_end)
+    if (start < new Date()) {
+      toast({ variant: 'destructive', title: 'Invalid time', description: 'Cannot schedule a session in the past.' })
+      return
+    }
+    if (end <= start) {
+      toast({ variant: 'destructive', title: 'Invalid time', description: 'End time must be after start time.' })
+      return
+    }
     createMutation.mutate({
       module_id: parseInt(formData.module_id),
       title: formData.title,
-      scheduled_start: new Date(formData.scheduled_start).toISOString(),
-      scheduled_end: new Date(formData.scheduled_end).toISOString(),
+      scheduled_start: start.toISOString(),
+      scheduled_end: end.toISOString(),
       late_threshold_minutes: parseInt(formData.late_threshold_minutes),
     })
   }
+
+  const nowLocal = new Date().toISOString().slice(0, 16)
 
   return (
     <div className="space-y-6">
@@ -425,6 +437,7 @@ export default function SessionsPage() {
               <Input
                 id="start"
                 type="datetime-local"
+                min={nowLocal}
                 value={formData.scheduled_start}
                 onChange={(e) => setFormData({ ...formData, scheduled_start: e.target.value })}
               />
@@ -434,6 +447,7 @@ export default function SessionsPage() {
               <Input
                 id="end"
                 type="datetime-local"
+                min={formData.scheduled_start || nowLocal}
                 value={formData.scheduled_end}
                 onChange={(e) => setFormData({ ...formData, scheduled_end: e.target.value })}
               />
