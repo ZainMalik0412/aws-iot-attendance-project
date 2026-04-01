@@ -155,7 +155,8 @@ export default function SessionsPage() {
   const handleCreate = () => {
     const start = new Date(formData.scheduled_start)
     const end = new Date(formData.scheduled_end)
-    if (start < new Date()) {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    if (start < fiveMinAgo) {
       toast({ variant: 'destructive', title: 'Invalid time', description: 'Cannot schedule a session in the past.' })
       return
     }

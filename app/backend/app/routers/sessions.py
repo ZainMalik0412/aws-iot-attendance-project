@@ -72,7 +72,7 @@ def create_session(payload: SessionCreate, db: DBSession, current_user: RequireL
         raise HTTPException(status_code=403, detail="Not assigned to this module")
     if payload.scheduled_end <= payload.scheduled_start:
         raise HTTPException(status_code=400, detail="End time must be after start time")
-    if payload.scheduled_start < datetime.utcnow():
+    if payload.scheduled_start < datetime.utcnow() - timedelta(minutes=5):
         raise HTTPException(status_code=400, detail="Cannot schedule a session in the past")
     session = Session(
         module_id=payload.module_id,
